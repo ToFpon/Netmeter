@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """
 netmeter.py — Network bandwidth monitor for Linux / GTK4
-v2 — fenêtre redimensionnable, always-on-top corrigé,
-     vue lignes ET vue barres avec graduation Y
-Requires: python3-gi (GTK4), python3-gi-cairo, python3-psutil
-          wmctrl  (apt install wmctrl)
+v3 — i18n FR / EN / DE, vue lignes + barres, graduation Y
+Requires: python3-gi, python3-gi-cairo, python3-psutil, wmctrl
 License: GPLv3
 """
 
@@ -12,6 +10,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 from gi.repository import Gtk, GLib, Gdk, Gio
 import cairo
+import locale
 import psutil
 import subprocess
 import time
@@ -20,12 +19,11 @@ from collections import deque
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-HISTORY      = 120        # secondes conservées dans le graphe
-TICK_MS      = 1000       # intervalle de rafraîchissement (ms)
-WIN_W, WIN_H = 460, 230   # taille par défaut (resizable)
-LM           = 62         # left margin pour les labels Y (px)
+HISTORY      = 120
+TICK_MS      = 1000
+WIN_W, WIN_H = 460, 230
+LM           = 62          # left margin for Y labels (px)
 
-# Couleurs (R, G, B[, A]) entre 0 et 1
 C_DL    = (0.25, 0.73, 0.31)
 C_UL    = (0.97, 0.50, 0.40)
 C_BG    = (0.05, 0.07, 0.09)
@@ -33,7 +31,78 @@ C_LABEL = (0.45, 0.52, 0.60, 0.85)
 C_AXIS  = (1.0,  1.0,  1.0,  0.18)
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── i18n ─────────────────────────────────────────────────────────────────────
+
+TRANSLATIONS: dict[str, dict[str, str]] = {
+    'en': {
+        'all_ifaces':    'All interfaces',
+        'iface':         'Interface',
+        'unit':          'Unit',
+        'language':      'Language',
+        'reset':         'Reset session',
+        'quit':          'Quit',
+        'view_bars':     '▊ Bars',
+        'view_lines':    '〰 Lines',
+        'session_dl':    'Session ↓',
+        'session_ul':    'Session ↑',
+        'kbps_label':    'KB/s  (auto MB/s)',
+        'tooltip_view':  'Switch view (Lines / Bars)',
+    },
+    'fr': {
+        'all_ifaces':    'Toutes les interfaces',
+        'iface':         'Interface',
+        'unit':          'Unité',
+        'language':      'Langue',
+        'reset':         'Réinitialiser session',
+        'quit':          'Quitter',
+        'view_bars':     '▊ Barres',
+        'view_lines':    '〰 Lignes',
+        'session_dl':    'Session ↓',
+        'session_ul':    'Session ↑',
+        'kbps_label':    'KB/s  (auto MB/s)',
+        'tooltip_view':  'Changer de vue (Lignes / Barres)',
+    },
+    'de': {
+        'all_ifaces':    'Alle Schnittstellen',
+        'iface':         'Schnittstelle',
+        'unit':          'Einheit',
+        'language':      'Sprache',
+        'reset':         'Sitzung zurücksetzen',
+        'quit':          'Beenden',
+        'view_bars':     '▊ Balken',
+        'view_lines':    '〰 Linien',
+        'session_dl':    'Sitzung ↓',
+        'session_ul':    'Sitzung ↑',
+        'kbps_label':    'KB/s  (auto MB/s)',
+        'tooltip_view':  'Ansicht wechseln (Linien / Balken)',
+    },
+}
+
+LANG_NAMES = {'en': '🇬🇧 English', 'fr': '🇫🇷 Français', 'de': '🇩🇪 Deutsch'}
+
+
+def _detect_lang() -> str:
+    """Detect system language; fallback to 'en'."""
+    try:
+        code = locale.getlocale()[0] or ''
+        code = code.lower()[:2]
+        if code in TRANSLATIONS:
+            return code
+    except Exception:
+        pass
+    return 'en'
+
+
+# Langue courante — modifiable globalement
+_current_lang: str = _detect_lang()
+
+
+def _(key: str) -> str:
+    """Return translated string for current language."""
+    return TRANSLATIONS.get(_current_lang, TRANSLATIONS['en']).get(key, key)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def fmt_speed(bps: float, unit: str) -> str:
     if unit == 'Mbit/s':
@@ -53,7 +122,6 @@ def fmt_total(b: float) -> str:
 
 
 def nice_ceil(value: float) -> float:
-    """Arrondit au-dessus à une valeur 'ronde' pour l'échelle Y."""
     if value <= 0:
         return 1024.0
     mag = 10 ** math.floor(math.log10(value))
@@ -64,14 +132,10 @@ def nice_ceil(value: float) -> float:
     return float(value * 1.1)
 
 
-# ── Graph widget ─────────────────────────────────────────────────────────────
+# ── Graph widget ──────────────────────────────────────────────────────────────
 
 class NetGraph(Gtk.DrawingArea):
-    """
-    Graphe réseau défilant — deux modes :
-      'lines' → courbes remplies (style oscilloscope)
-      'bars'  → barres verticales colorées avec graduation Y
-    """
+    """Scrolling dual graph — modes: 'lines' and 'bars'."""
 
     MODES = ['lines', 'bars']
 
@@ -87,8 +151,6 @@ class NetGraph(Gtk.DrawingArea):
         self.set_hexpand(True)
         self.set_size_request(-1, 110)
 
-    # ── API publique ──────────────────────────────────────────────────────────
-
     def push(self, dl: float, ul: float):
         self.dl.append(dl)
         self.ul.append(ul)
@@ -99,25 +161,21 @@ class NetGraph(Gtk.DrawingArea):
         self.queue_draw()
         return self.mode
 
-    # ── Dispatch principal ────────────────────────────────────────────────────
+    # ── Draw dispatch ─────────────────────────────────────────────────────────
 
     def _draw(self, _area, cr, w: int, h: int):
         cr.set_source_rgb(*C_BG)
         cr.paint()
-
         peak = nice_ceil(max(max(self.dl, default=0),
                              max(self.ul, default=0), 1024))
-
         self._draw_yaxis(cr, w, h, peak)
-
         if self.mode == 'bars':
             self._draw_bars(cr, w, h, peak)
         else:
             self._draw_lines(cr, w, h, peak)
-
         self._draw_legend(cr, h)
 
-    # ── Vue lignes ────────────────────────────────────────────────────────────
+    # ── Lines view ────────────────────────────────────────────────────────────
 
     def _draw_lines(self, cr, w: int, h: int, peak: float):
         n = len(self.dl)
@@ -133,8 +191,6 @@ class NetGraph(Gtk.DrawingArea):
                 for i, v in enumerate(data)
             ]
             r, g, b = colour
-
-            # aire remplie sous la courbe
             cr.set_source_rgba(r, g, b, 0.14)
             cr.move_to(pts[0][0], h - bot)
             for x, y in pts:
@@ -142,8 +198,6 @@ class NetGraph(Gtk.DrawingArea):
             cr.line_to(pts[-1][0], h - bot)
             cr.close_path()
             cr.fill()
-
-            # ligne principale
             cr.set_source_rgba(r, g, b, 0.92)
             cr.set_line_width(1.7)
             cr.move_to(*pts[0])
@@ -151,35 +205,29 @@ class NetGraph(Gtk.DrawingArea):
                 cr.line_to(x, y)
             cr.stroke()
 
-        _curve(self.ul, C_UL)   # UL derrière
-        _curve(self.dl, C_DL)   # DL devant
+        _curve(self.ul, C_UL)
+        _curve(self.dl, C_DL)
 
-    # ── Vue barres ────────────────────────────────────────────────────────────
+    # ── Bars view ─────────────────────────────────────────────────────────────
 
     def _draw_bars(self, cr, w: int, h: int, peak: float):
         n   = len(self.dl)
         gw  = w - LM
         bot = 6
-
-        bpw = max(3.0, gw / n)          # largeur d'une paire
-        sw  = max(1.0, (bpw - 2) / 2)   # largeur d'une barre
+        bpw = max(3.0, gw / n)
+        sw  = max(1.0, (bpw - 2) / 2)
 
         for i, (dl, ul) in enumerate(zip(self.dl, self.ul)):
             x = LM + i * bpw
-
             bh = (dl / peak) * (h - bot - 4)
             if bh > 0.5:
-                r, g, b = C_DL
-                self._bar(cr, x, h - bot - bh, sw, bh, r, g, b)
-
+                self._bar(cr, x, h - bot - bh, sw, bh, *C_DL)
             bh = (ul / peak) * (h - bot - 4)
             if bh > 0.5:
-                r, g, b = C_UL
-                self._bar(cr, x + sw + 1, h - bot - bh, sw, bh, r, g, b)
+                self._bar(cr, x + sw + 1, h - bot - bh, sw, bh, *C_UL)
 
     @staticmethod
     def _bar(cr, x, y, w, h, r, g, b):
-        """Barre avec coins supérieurs arrondis et reflet."""
         rad = min(2.5, w / 2, h / 2)
         cr.set_source_rgba(r, g, b, 0.82)
         if rad > 0 and h > rad * 2:
@@ -192,30 +240,23 @@ class NetGraph(Gtk.DrawingArea):
         else:
             cr.rectangle(x, y, w, h)
         cr.fill()
-
-        # highlight sommital
         ht = min(4.0, h * 0.25)
         cr.set_source_rgba(min(1, r + 0.25), min(1, g + 0.15), min(1, b + 0.1), 0.40)
         cr.rectangle(x + 1, y + 1, max(0, w - 2), ht)
         cr.fill()
 
-    # ── Axe Y + graduation ────────────────────────────────────────────────────
+    # ── Y axis + graduation ───────────────────────────────────────────────────
 
     def _draw_yaxis(self, cr, w: int, h: int, peak: float):
-        cr.select_font_face("monospace",
-                            cairo.FONT_SLANT_NORMAL,
-                            cairo.FONT_WEIGHT_NORMAL)
+        cr.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(9)
-
         ticks = 4
         bot, top = 6, 10
 
         for i in range(1, ticks + 1):
-            frac = i / ticks
-            y    = h - bot - frac * (h - top - bot)
-            val  = peak * frac
-
-            # Ligne de grille pointillée
+            frac  = i / ticks
+            y     = h - bot - frac * (h - top - bot)
+            val   = peak * frac
             alpha = 0.11 if i % 2 == 0 else 0.05
             cr.set_source_rgba(1, 1, 1, alpha)
             cr.set_line_width(0.5)
@@ -224,33 +265,26 @@ class NetGraph(Gtk.DrawingArea):
             cr.line_to(w, y)
             cr.stroke()
             cr.set_dash([])
-
-            # Label de vitesse
             label = fmt_speed(val, self._unit)
             ext   = cr.text_extents(label)
             cr.set_source_rgba(*C_LABEL)
             cr.move_to(LM - ext.width - 5, y + ext.height / 2)
             cr.show_text(label)
 
-        # Axe vertical
         cr.set_source_rgba(*C_AXIS)
         cr.set_line_width(0.8)
         cr.set_dash([])
         cr.move_to(LM, top)
         cr.line_to(LM, h - bot)
         cr.stroke()
-
-        # Baseline
         cr.move_to(LM, h - bot)
         cr.line_to(w,  h - bot)
         cr.stroke()
 
-    # ── Légende inline ────────────────────────────────────────────────────────
+    # ── Inline legend ─────────────────────────────────────────────────────────
 
     def _draw_legend(self, cr, h: int):
-        cr.select_font_face("monospace",
-                            cairo.FONT_SLANT_NORMAL,
-                            cairo.FONT_WEIGHT_NORMAL)
+        cr.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
         cr.set_font_size(9)
         x = LM + 8
         for label, colour in (("↓ DL", C_DL), ("↑ UL", C_UL)):
@@ -264,7 +298,7 @@ class NetGraph(Gtk.DrawingArea):
             x += 58
 
 
-# ── Fenêtre principale ────────────────────────────────────────────────────────
+# ── Main window ───────────────────────────────────────────────────────────────
 
 class NetMeterWindow(Gtk.ApplicationWindow):
 
@@ -274,15 +308,14 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         self.set_default_size(WIN_W, WIN_H)
         self.set_resizable(True)
 
-        # Always-on-top via wmctrl (signal 'map' + délai 150ms pour le WM)
         self.connect('map', lambda *_: GLib.timeout_add(150, self._set_above))
 
-        self._iface:       str | None  = None
+        self._iface:      str | None   = None
         self._unit                     = 'KB/s'
-        self._prev_bytes:  tuple | None = None
-        self._prev_t:      float | None = None
-        self._session_dl   = 0.0
-        self._session_ul   = 0.0
+        self._prev_bytes: tuple | None = None
+        self._prev_t:     float | None = None
+        self._session_dl  = 0.0
+        self._session_ul  = 0.0
         self._ifaces: list[str] = sorted(psutil.net_if_stats().keys())
 
         self._build_ui()
@@ -292,74 +325,80 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         GLib.timeout_add(TICK_MS, self._tick)
         self._tick()
 
-    # ── Construction UI ───────────────────────────────────────────────────────
+    # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self):
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.set_child(root)
 
-        # ── Barre de titre ────────────────────────────────────────────────
+        # Header
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         hdr.set_css_classes(['nm-header'])
 
-        self._title = Gtk.Label(label="🌐 NetMeter — All interfaces")
+        self._title = Gtk.Label()
         self._title.set_css_classes(['nm-title'])
         self._title.set_hexpand(True)
         self._title.set_xalign(0.0)
         hdr.append(self._title)
 
-        self._btn_mode = Gtk.Button(label="▊ Barres")
+        self._btn_mode = Gtk.Button()
         self._btn_mode.set_css_classes(['nm-btn'])
-        self._btn_mode.set_tooltip_text("Changer de vue (Lignes / Barres)")
         self._btn_mode.connect('clicked', self._toggle_mode)
         hdr.append(self._btn_mode)
 
-        btn_close = Gtk.Button(label="×")
-        btn_close.set_css_classes(['nm-close'])
-        btn_close.connect('clicked', lambda _: self.get_application().quit())
-        hdr.append(btn_close)
-
         root.append(hdr)
 
-        # ── Graphe ────────────────────────────────────────────────────────
+        # Graph
         self._graph = NetGraph()
         root.append(self._graph)
 
-        # ── Ligne vitesses actuelles ───────────────────────────────────────
+        # Speed row
         speeds = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         speeds.set_css_classes(['nm-speeds'])
         speeds.set_homogeneous(True)
 
-        self._dl_lbl = Gtk.Label(label="↓   ---")
+        self._dl_lbl = Gtk.Label()
         self._dl_lbl.set_css_classes(['nm-dl'])
-
-        self._ul_lbl = Gtk.Label(label="↑   ---")
+        self._ul_lbl = Gtk.Label()
         self._ul_lbl.set_css_classes(['nm-ul'])
 
         speeds.append(self._dl_lbl)
         speeds.append(self._ul_lbl)
         root.append(speeds)
 
-        # ── Totaux de session ─────────────────────────────────────────────
+        # Totals row
         totals = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         totals.set_css_classes(['nm-totals'])
         totals.set_homogeneous(True)
 
-        self._tot_dl = Gtk.Label(label="Session ↓  0 B")
+        self._tot_dl = Gtk.Label()
         self._tot_dl.set_css_classes(['nm-tot'])
-
-        self._tot_ul = Gtk.Label(label="Session ↑  0 B")
+        self._tot_ul = Gtk.Label()
         self._tot_ul.set_css_classes(['nm-tot'])
 
         totals.append(self._tot_dl)
         totals.append(self._tot_ul)
         root.append(totals)
 
-        # Clic droit → menu contextuel
+        # Right-click
         rclick = Gtk.GestureClick()
         rclick.set_button(3)
         rclick.connect('pressed', self._on_rclick)
         self.add_controller(rclick)
+
+        # Initial label refresh
+        self._refresh_labels()
+
+    def _refresh_labels(self):
+        """Update all translatable UI strings."""
+        mode = self._graph.mode
+        self._btn_mode.set_label(_('view_bars') if mode == 'lines' else _('view_lines'))
+        self._btn_mode.set_tooltip_text(_('tooltip_view'))
+        self._update_title()
+        self._dl_lbl.set_text(f"↓   ---")
+        self._ul_lbl.set_text(f"↑   ---")
+        self._tot_dl.set_text(f"{_('session_dl')}  0 B")
+        self._tot_ul.set_text(f"{_('session_ul')}  0 B")
 
     def _load_css(self):
         css = Gtk.CssProvider()
@@ -374,18 +413,12 @@ class NetMeterWindow(Gtk.ApplicationWindow):
                 background: transparent;
                 border: none;
                 box-shadow: none;
-                margin: 0;
-                padding: 0;
-                min-height: 0;
+                margin: 0; padding: 0; min-height: 0;
             }
             window headerbar button {
                 background: transparent;
-                border: none;
-                box-shadow: none;
-                margin: 0;
-                padding: 0;
-                min-width: 0;
-                min-height: 0;
+                border: none; box-shadow: none;
+                margin: 0; padding: 0; min-width: 0; min-height: 0;
             }
             .nm-header {
                 background: #161b22;
@@ -405,17 +438,6 @@ class NetMeterWindow(Gtk.ApplicationWindow):
                 border-radius: 4px;
             }
             .nm-btn:hover { background: #30363d; color: #c9d1d9; }
-            .nm-close {
-                background: transparent;
-                border: none;
-                box-shadow: none;
-                color: #6e7681;
-                font-size: 15px;
-                padding: 0 3px;
-                min-width: 22px;
-                min-height: 22px;
-            }
-            .nm-close:hover { color: #f85149; background: transparent; }
             .nm-speeds   { padding: 4px 14px 2px; }
             .nm-dl {
                 color: #3fb950;
@@ -441,15 +463,17 @@ class NetMeterWindow(Gtk.ApplicationWindow):
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-    # ── Actions Gio ───────────────────────────────────────────────────────────
+    # ── Gio actions ───────────────────────────────────────────────────────────
 
     def _register_actions(self):
         app = self.get_application()
 
+        # Quit
         a = Gio.SimpleAction.new('quit', None)
         a.connect('activate', lambda *_: app.quit())
         app.add_action(a)
 
+        # Interface
         iface_act = Gio.SimpleAction.new_stateful(
             'iface', GLib.VariantType('s'), GLib.Variant('s', 'All'))
         def _set_iface(action, param):
@@ -461,6 +485,7 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         iface_act.connect('activate', _set_iface)
         app.add_action(iface_act)
 
+        # Unit
         unit_act = Gio.SimpleAction.new_stateful(
             'unit', GLib.VariantType('s'), GLib.Variant('s', 'KB/s'))
         def _set_unit(action, param):
@@ -470,11 +495,23 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         unit_act.connect('activate', _set_unit)
         app.add_action(unit_act)
 
+        # Reset
         reset_act = Gio.SimpleAction.new('reset', None)
         reset_act.connect('activate', lambda *_: self._reset_session())
         app.add_action(reset_act)
 
-    # ── Polling réseau ────────────────────────────────────────────────────────
+        # Language
+        lang_act = Gio.SimpleAction.new_stateful(
+            'lang', GLib.VariantType('s'), GLib.Variant('s', _current_lang))
+        def _set_lang(action, param):
+            global _current_lang
+            _current_lang = param.get_string()
+            action.set_state(param)
+            self._refresh_labels()
+        lang_act.connect('activate', _set_lang)
+        app.add_action(lang_act)
+
+    # ── Network polling ───────────────────────────────────────────────────────
 
     def _read_bytes(self) -> tuple[float, float]:
         counters = psutil.net_io_counters(pernic=True)
@@ -500,23 +537,19 @@ class NetMeterWindow(Gtk.ApplicationWindow):
                 self._graph.push(dl, ul)
                 self._dl_lbl.set_text(f"↓  {fmt_speed(dl, self._unit)}")
                 self._ul_lbl.set_text(f"↑  {fmt_speed(ul, self._unit)}")
-                self._tot_dl.set_text(f"Session ↓  {fmt_total(self._session_dl)}")
-                self._tot_ul.set_text(f"Session ↑  {fmt_total(self._session_ul)}")
+                self._tot_dl.set_text(f"{_('session_dl')}  {fmt_total(self._session_dl)}")
+                self._tot_ul.set_text(f"{_('session_ul')}  {fmt_total(self._session_ul)}")
 
         self._prev_bytes = curr
         self._prev_t = now
         return GLib.SOURCE_CONTINUE
 
-    # ── Contrôles fenêtre ─────────────────────────────────────────────────────
+    # ── Window controls ───────────────────────────────────────────────────────
 
     def _set_above(self) -> bool:
-        """Always-on-top via wmctrl (envoie le bon ClientMessage EWMH).
-        Fallback sur xprop si wmctrl absent."""
         try:
-            subprocess.Popen(
-                ['wmctrl', '-r', 'NetMeter', '-b', 'add,above'],
-                stderr=subprocess.DEVNULL
-            )
+            subprocess.Popen(['wmctrl', '-r', 'NetMeter', '-b', 'add,above'],
+                             stderr=subprocess.DEVNULL)
         except FileNotFoundError:
             try:
                 xid = self.get_surface().get_xid()
@@ -524,27 +557,27 @@ class NetMeterWindow(Gtk.ApplicationWindow):
                     ['xprop', '-id', str(xid),
                      '-f', '_NET_WM_STATE', '32a',
                      '-set', '_NET_WM_STATE', '_NET_WM_STATE_ABOVE'],
-                    stderr=subprocess.DEVNULL
-                )
+                    stderr=subprocess.DEVNULL)
             except Exception:
                 pass
         except Exception:
             pass
-        return False   # ne pas répéter
+        return False
 
     def _toggle_mode(self, _btn=None):
         mode = self._graph.cycle_mode()
-        self._btn_mode.set_label("〰 Lignes" if mode == 'bars' else "▊ Barres")
+        # bouton affiche la vue VERS LAQUELLE on basculera au prochain clic
+        self._btn_mode.set_label(_('view_bars') if mode == 'lines' else _('view_lines'))
 
     def _reset_session(self):
         self._session_dl = 0.0
         self._session_ul = 0.0
 
     def _update_title(self):
-        name = self._iface or "All interfaces"
+        name = self._iface if self._iface else _('all_ifaces')
         self._title.set_text(f"🌐 NetMeter — {name}")
 
-    # ── Menu contextuel ───────────────────────────────────────────────────────
+    # ── Context menu ──────────────────────────────────────────────────────────
 
     def _on_rclick(self, gesture, _n, x, y):
         pop = Gtk.PopoverMenu.new_from_model(self._build_menu())
@@ -558,18 +591,23 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         menu = Gio.Menu()
 
         ifaces = Gio.Menu()
-        ifaces.append("All interfaces", "app.iface::All")
+        ifaces.append(_('all_ifaces'), "app.iface::All")
         for iface in self._ifaces:
             ifaces.append(iface, f"app.iface::{iface}")
-        menu.append_submenu("Interface", ifaces)
+        menu.append_submenu(_('iface'), ifaces)
 
         units = Gio.Menu()
-        units.append("KB/s  (auto MB/s)", "app.unit::KB/s")
+        units.append(_('kbps_label'), "app.unit::KB/s")
         units.append("Mbit/s", "app.unit::Mbit/s")
-        menu.append_submenu("Unité", units)
+        menu.append_submenu(_('unit'), units)
 
-        menu.append("Réinitialiser session", "app.reset")
-        menu.append("Quitter", "app.quit")
+        langs = Gio.Menu()
+        for code, name in LANG_NAMES.items():
+            langs.append(name, f"app.lang::{code}")
+        menu.append_submenu(_('language'), langs)
+
+        menu.append(_('reset'), "app.reset")
+        menu.append(_('quit'),  "app.quit")
         return menu
 
 
