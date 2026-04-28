@@ -46,7 +46,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'session_dl':    'Session ↓',
         'session_ul':    'Session ↑',
         'kbps_label':    'KB/s  (auto MB/s)',
-        'bps_label':     'B/s  (auto KB/s, MB/s)',
+        'bps_label':     'B/s',
         'tooltip_view':  'Switch view (Lines / Bars)',
     },
     'fr': {
@@ -61,7 +61,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'session_dl':    'Session ↓',
         'session_ul':    'Session ↑',
         'kbps_label':    'KB/s  (auto MB/s)',
-        'bps_label':     'B/s  (auto KB/s, MB/s)',
+        'bps_label':     'B/s',
         'tooltip_view':  'Changer de vue (Lignes / Barres)',
     },
     'de': {
@@ -76,7 +76,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'session_dl':    'Sitzung ↓',
         'session_ul':    'Sitzung ↑',
         'kbps_label':    'KB/s  (auto MB/s)',
-        'bps_label':     'B/s  (auto KB/s, MB/s)',
+        'bps_label':     'B/s',
         'tooltip_view':  'Ansicht wechseln (Linien / Balken)',
     },
 }
@@ -111,10 +111,6 @@ def fmt_speed(bps: float, unit: str) -> str:
     if unit == 'Mbit/s':
         return f"{bps * 8 / 1e6:.2f} Mbit/s"
     if unit == 'B/s':
-        if bps >= 1024 ** 2:
-            return f"{bps / 1024**2:.2f} MB/s"
-        if bps >= 1024:
-            return f"{bps / 1024:.1f} KB/s"
         return f"{bps:.0f} B/s"
     # KB/s (défaut) — auto-upgrade MB/s
     kbps = bps / 1024
@@ -170,6 +166,10 @@ class NetGraph(Gtk.DrawingArea):
         self.mode = self.MODES[(self.MODES.index(self.mode) + 1) % len(self.MODES)]
         self.queue_draw()
         return self.mode
+
+    def set_unit(self, unit: str):
+        self._unit = unit
+        self.queue_draw()
 
     # ── Draw dispatch ─────────────────────────────────────────────────────────
 
@@ -512,7 +512,7 @@ class NetMeterWindow(Gtk.ApplicationWindow):
             'unit', GLib.VariantType('s'), GLib.Variant('s', 'KB/s'))
         def _set_unit(action, param):
             self._unit = param.get_string()
-            self._graph._unit = param.get_string()
+            self._graph.set_unit(self._unit)
             action.set_state(param)
         unit_act.connect('activate', _set_unit)
         app.add_action(unit_act)
