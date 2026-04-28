@@ -570,7 +570,7 @@ class NetMeterWindow(Gtk.ApplicationWindow):
 
     def _set_above(self) -> bool:
         try:
-            subprocess.Popen(['wmctrl', '-r', 'NetMeter', '-b', 'add,above'],
+            subprocess.Popen(['wmctrl', '-r', 'NetMeter'],
                              stderr=subprocess.DEVNULL)
         except FileNotFoundError:
             try:
