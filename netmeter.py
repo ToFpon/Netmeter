@@ -171,6 +171,10 @@ class NetGraph(Gtk.DrawingArea):
         self.queue_draw()
         return self.mode
 
+    def set_unit(self, unit: str):
+        self._unit = unit
+        self.queue_draw()
+
     # ── Draw dispatch ─────────────────────────────────────────────────────────
 
     def _draw(self, _area, cr, w: int, h: int):
@@ -512,7 +516,7 @@ class NetMeterWindow(Gtk.ApplicationWindow):
             'unit', GLib.VariantType('s'), GLib.Variant('s', 'KB/s'))
         def _set_unit(action, param):
             self._unit = param.get_string()
-            self._graph._unit = param.get_string()
+            self._graph.set_unit(self._unit)
             action.set_state(param)
         unit_act.connect('activate', _set_unit)
         app.add_action(unit_act)
