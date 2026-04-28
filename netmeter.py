@@ -176,9 +176,20 @@ class NetGraph(Gtk.DrawingArea):
     def _draw(self, _area, cr, w: int, h: int):
         cr.set_source_rgb(*C_BG)
         cr.paint()
+
+        # Calcul du seuil minimum (floor) selon l'unité sélectionnée
+        if self._unit == 'B/s':
+            floor = 10.0        # Permet de voir les tout petits échanges
+        elif self._unit == 'Mbit/s':
+            floor = 125000.0    # 1 Mbit/s en octets
+        else:
+            floor = 1024.0      # 1 KB/s par défaut
+
+        # On calcule le pic en fonction de l'historique et du plancher
         peak = nice_ceil(max(max(self.dl, default=0),
                              max(self.ul, default=0),
-                             1.0 if self._unit == 'B/s' else 1024.0))
+                             floor))
+
         self._draw_yaxis(cr, w, h, peak)
         if self.mode == 'bars':
             self._draw_bars(cr, w, h, peak)
