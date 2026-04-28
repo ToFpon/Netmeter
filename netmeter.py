@@ -21,13 +21,13 @@ from collections import deque
 
 HISTORY      = 120
 TICK_MS      = 1000
-WIN_W, WIN_H = 460, 230
-LM           = 62          # left margin for Y labels (px)
+WIN_W, WIN_H = 690, 345
+LM           = 110        # left margin for Y labels (px)
 
 C_DL    = (0.25, 0.73, 0.31)
 C_UL    = (0.97, 0.50, 0.40)
 C_BG    = (0.05, 0.07, 0.09)
-C_LABEL = (0.45, 0.52, 0.60, 0.85)
+C_LABEL = (1,1,1, 0.85)
 C_AXIS  = (1.0,  1.0,  1.0,  0.18)
 
 
@@ -109,7 +109,7 @@ def _(key: str) -> str:
 
 def fmt_speed(bps: float, unit: str) -> str:
     if unit == 'Mbit/s':
-        return f"{bps * 8 / 1e6:.2f} Mbit/s"
+        return f"{bps * 8 / 1e6:.0f} Mbit/s"
     if unit == 'B/s':
         return f"{bps:.0f} B/s"
     # KB/s (défaut) — auto-upgrade MB/s
@@ -271,7 +271,7 @@ class NetGraph(Gtk.DrawingArea):
 
     def _draw_yaxis(self, cr, w: int, h: int, peak: float):
         cr.select_font_face("monospace", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
-        cr.set_font_size(9)
+        cr.set_font_size(12)
         ticks = 4
         bot, top = 6, 10
 
@@ -475,7 +475,7 @@ class NetMeterWindow(Gtk.ApplicationWindow):
             }
             .nm-totals { padding: 0 14px 6px; }
             .nm-tot {
-                color: #484f58;
+                color: #f6f5f4;
                 font-family: monospace;
                 font-size: 10px;
             }
