@@ -44,8 +44,7 @@ fi
 # ── Target directories ────────────────────────────────────────────────────────
 BIN_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
-ICON_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
-mkdir -p "$BIN_DIR" "$APP_DIR" "$ICON_DIR"
+mkdir -p "$BIN_DIR" "$APP_DIR"
 
 # ── Copy script ───────────────────────────────────────────────────────────────
 DEST="${BIN_DIR}/netmeter"
@@ -54,47 +53,24 @@ cp "$NETMETER_SRC" "$DEST"
 chmod +x "$DEST"
 ok "Script installed in ${DEST}"
 
-# ── SVG icon ──────────────────────────────────────────────────────────────────
-ICON_PATH="${ICON_DIR}/netmeter.svg"
-info "Creating icon..."
-cat > "$ICON_PATH" << 'SVGEOF'
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="10" fill="#0d1117"/>
-  <rect x="6" y="8" width="52" height="36" rx="4" fill="#161b22" stroke="#21262d" stroke-width="1"/>
-  <polyline points="8,40 16,32 22,35 28,20 34,25 40,14 46,18 54,10"
-            fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-  <polyline points="8,42 16,38 22,40 28,34 34,36 40,28 46,32 54,22"
-            fill="none" stroke="#f78166" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-  <rect x="8"  y="50" width="8" height="5" rx="1" fill="#3fb950"/>
-  <rect x="30" y="50" width="8" height="5" rx="1" fill="#f78166"/>
-  <text x="19" y="55" font-family="monospace" font-size="6" fill="#8b949e">DL</text>
-  <text x="41" y="55" font-family="monospace" font-size="6" fill="#8b949e">UL</text>
-</svg>
-SVGEOF
-ok "Icon created in ${ICON_PATH}"
-
 # ── .desktop launcher ─────────────────────────────────────────────────────────
-DESKTOP_FILE="${APP_DIR}/netmeter.desktop"
+DESKTOP_FILE="${APP_DIR}/NetMeter.desktop"
 info "Creating .desktop launcher..."
 cat > "$DESKTOP_FILE" << EOF
 [Desktop Entry]
-Version=1.0
-Type=Application
+Encoding=UTF-8
 Name=NetMeter
-GenericName=Network Monitor
-Comment=Real-time network bandwidth monitor
-Exec=${DEST}
-Icon=netmeter
+Comment=
+Exec=python3 ${DEST}
+Icon=blackmagicraw-speedtest
 Terminal=false
-Categories=Network;Monitor;System;
-Keywords=network;bandwidth;monitor;réseau;débit;Netzwerk;
-StartupNotify=false
+Type=Application
+StartupWMClass=netmeter.py
+Categories=GNOME;Application;Utility;
 EOF
 ok "Launcher created in ${DESKTOP_FILE}"
 
-# ── Icon/desktop cache ────────────────────────────────────────────────────────
-command -v gtk-update-icon-cache &>/dev/null \
-    && gtk-update-icon-cache -q -t "${HOME}/.local/share/icons/hicolor" 2>/dev/null || true
+# ── Desktop database cache ────────────────────────────────────────────────────
 command -v update-desktop-database &>/dev/null \
     && update-desktop-database "$APP_DIR" 2>/dev/null || true
 
