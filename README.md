@@ -17,7 +17,7 @@
   - `〰 Lines` — filled curves, oscilloscope style
   - `▊ Bars` — DL/UL side-by-side bars with highlight
 - **Auto-scaling Y axis** — adapts to current peak, with dotted grid lines
-- **Real-time speeds** — KB/s (auto-upgrades to MB/s) or Mbit/s
+- **Real-time speeds** — KB/s (auto-upgrades to MB/s) or Mbit/s or B/s
 - **Session counters** — total DL/UL since launch, resettable
 - **Interface selector** — all interfaces or one specific (right-click)
 - **Always-on-top** — stays visible above your other windows
@@ -145,7 +145,7 @@ GPLv3 — see [https://www.gnu.org/licenses/gpl-3.0.html](https://www.gnu.org/li
   - `〰 Lignes` — courbes remplies façon oscilloscope
   - `▊ Barres` — barres DL/UL côte à côte avec reflets
 - **Graduation Y automatique** — s'adapte au pic courant, grille pointillée
-- **Vitesses en temps réel** — KB/s (auto MB/s) ou Mbit/s
+- **Vitesses en temps réel** — KB/s (auto MB/s) ou Mbit/s ou B/s
 - **Compteurs de session** — total DL/UL depuis le lancement, réinitialisables
 - **Sélecteur d'interface** — toutes ou une seule (clic droit)
 - **Always-on-top** — reste visible au-dessus des autres fenêtres
