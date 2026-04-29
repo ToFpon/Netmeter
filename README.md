@@ -17,11 +17,14 @@
   - `〰 Lines` — filled curves, oscilloscope style
   - `▊ Bars` — DL/UL side-by-side bars with highlight
 - **Auto-scaling Y axis** — adapts to current peak, with dotted grid lines
-- **Real-time speeds** — KB/s (auto-upgrades to MB/s) or Mbit/s or B/s
+- **Real-time speeds** — KB/s (auto-upgrades to MB/s), Mbit/s or B/s
 - **Session counters** — total DL/UL since launch, resettable
 - **Interface selector** — all interfaces or one specific (right-click)
-- **Always-on-top** — stays visible above your other windows
+- **Always-on-top** — stays visible above your other windows (survives mini mode toggle)
 - **Resizable window** with native WM decoration
+- **Mini mode** — compact windowless widget, draggable anywhere on screen:
+  - `Mini: text` — speeds only (~2×1 cm)
+  - `Mini: graph` — full-width graph without axis, lines or bars
 - **3 languages** — English 🇬🇧 / Français 🇫🇷 / Deutsch 🇩🇪 (auto-detected, switchable)
 
 ---
@@ -85,9 +88,13 @@ netmeter
 | **`▊ Bars` / `〰 Lines` button** | Switch between graph views |
 | **Right-click** on the window | Open context menu |
 | Menu → **Interface** | Select a network interface |
-| Menu → **Unit** | KB/s (auto MB/s) or Mbit/s |
+| Menu → **Unit** | B/s, KB/s (auto MB/s) or Mbit/s |
 | Menu → **Language** | Switch UI language (EN / FR / DE) |
 | Menu → **Reset session** | Reset DL/UL session counters |
+| Menu → **Mini mode** | Enter compact windowless mode |
+| Menu → **Mini: graph / Mini: text** | Switch mini sub-mode (in mini mode only) |
+| Menu → **Normal mode** | Return to full window (in mini mode) |
+| **Left-click drag** | Move window (mini mode, no decoration) |
 | Menu → **Quit** | Exit the application |
 
 ---
@@ -97,11 +104,12 @@ netmeter
 Constants at the top of the file:
 
 ```python
-HISTORY  = 120    # Graph history duration (seconds)
-TICK_MS  = 1000   # Refresh interval (ms)
-WIN_W    = 460    # Default width (px)
-WIN_H    = 230    # Default height (px)
-LM       = 62     # Left margin for Y labels (px)
+HISTORY      = 120     # Graph history duration (seconds)
+TICK_MS      = 1000    # Refresh interval (ms)
+WIN_W, WIN_H = 690, 345  # Default window size (px)
+MINI_W       = 260     # Mini mode width (px)
+MINI_H_GRAPH = 72      # Mini graph height (px)
+LM           = 110     # Left margin for Y labels (px)
 ```
 
 Colours (R, G, B between 0 and 1):
@@ -145,11 +153,14 @@ GPLv3 — see [https://www.gnu.org/licenses/gpl-3.0.html](https://www.gnu.org/li
   - `〰 Lignes` — courbes remplies façon oscilloscope
   - `▊ Barres` — barres DL/UL côte à côte avec reflets
 - **Graduation Y automatique** — s'adapte au pic courant, grille pointillée
-- **Vitesses en temps réel** — KB/s (auto MB/s) ou Mbit/s ou B/s
+- **Vitesses en temps réel** — B/s, KB/s (auto MB/s) ou Mbit/s
 - **Compteurs de session** — total DL/UL depuis le lancement, réinitialisables
 - **Sélecteur d'interface** — toutes ou une seule (clic droit)
-- **Always-on-top** — reste visible au-dessus des autres fenêtres
+- **Always-on-top** — reste visible au-dessus des autres fenêtres (survit au mini mode)
 - **Fenêtre redimensionnable** avec décoration native du WM
+- **Mode mini** — widget compact sans décoration, déplaçable n'importe où :
+  - `Mini : texte` — vitesses uniquement (~2×1 cm)
+  - `Mini : graphe` — graphe pleine largeur sans axe, lignes ou barres
 - **3 langues** — English 🇬🇧 / Français 🇫🇷 / Deutsch 🇩🇪 (détection auto, changeable)
 
 ---
@@ -199,9 +210,13 @@ et crée un lanceur `.desktop` dans `~/.local/share/applications/`.
 | **Bouton `▊ Barres` / `〰 Lignes`** | Bascule entre les deux vues |
 | **Clic droit** sur la fenêtre | Ouvre le menu contextuel |
 | Menu → **Interface** | Sélectionne une interface réseau |
-| Menu → **Unité** | KB/s (auto MB/s) ou Mbit/s |
+| Menu → **Unité** | B/s, KB/s (auto MB/s) ou Mbit/s |
 | Menu → **Langue** | Change la langue (EN / FR / DE) |
 | Menu → **Réinitialiser session** | Remet les compteurs à zéro |
+| Menu → **Mode mini** | Passe en widget compact sans décoration |
+| Menu → **Mini : graphe / Mini : texte** | Bascule le sous-mode mini (en mode mini uniquement) |
+| Menu → **Mode normal** | Retour à la fenêtre complète |
+| **Glisser clic gauche** | Déplace la fenêtre (mode mini, sans décoration) |
 | Menu → **Quitter** | Ferme l'application |
 
 ---

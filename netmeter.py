@@ -21,7 +21,9 @@ from collections import deque
 
 HISTORY      = 120
 TICK_MS      = 1000
-WIN_W, WIN_H = 690, 345
+WIN_W, WIN_H     = 690, 345
+MINI_W           = 260
+MINI_H_GRAPH     = 72    # mini graphe
 LM           = 110        # left margin for Y labels (px)
 
 C_DL    = (0.25, 0.73, 0.31)
@@ -47,6 +49,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'session_ul':    'Session ↑',
         'kbps_label':    'KB/s  (auto MB/s)',
         'bps_label':     'B/s',
+        'mini_on':       'Mini mode',
+        'mini_off':      'Normal mode',
+        'mini_graph':    'Mini: graph',
+        'mini_text':     'Mini: text',
         'tooltip_view':  'Switch view (Lines / Bars)',
     },
     'fr': {
@@ -62,6 +68,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'session_ul':    'Session ↑',
         'kbps_label':    'KB/s  (auto MB/s)',
         'bps_label':     'B/s',
+        'mini_on':       'Mode mini',
+        'mini_off':      'Mode normal',
+        'mini_graph':    'Mini : graphe',
+        'mini_text':     'Mini : texte',
         'tooltip_view':  'Changer de vue (Lignes / Barres)',
     },
     'de': {
@@ -77,6 +87,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         'session_ul':    'Sitzung ↑',
         'kbps_label':    'KB/s  (auto MB/s)',
         'bps_label':     'B/s',
+        'mini_on':       'Mini-Modus',
+        'mini_off':      'Normal-Modus',
+        'mini_graph':    'Mini: Grafik',
+        'mini_text':     'Mini: Text',
         'tooltip_view':  'Ansicht wechseln (Linien / Balken)',
     },
 }
@@ -151,6 +165,7 @@ class NetGraph(Gtk.DrawingArea):
         self.ul:   deque = deque([0.0] * HISTORY, maxlen=HISTORY)
         self.mode  = 'lines'
         self._unit = 'KB/s'
+        self.mini  = False   # True → pas d'axe Y, pleine largeur
 
         self.set_draw_func(self._draw)
         self.set_vexpand(True)
@@ -179,36 +194,41 @@ class NetGraph(Gtk.DrawingArea):
 
         # Calcul du seuil minimum (floor) selon l'unité sélectionnée
         if self._unit == 'B/s':
-            floor = 10.0        # Permet de voir les tout petits échanges
+            floor = 10.0
         elif self._unit == 'Mbit/s':
-            floor = 125000.0    # 1 Mbit/s en octets
+            floor = 125000.0
         else:
-            floor = 1024.0      # 1 KB/s par défaut
+            floor = 1024.0
 
-        # On calcule le pic en fonction de l'historique et du plancher
         peak = nice_ceil(max(max(self.dl, default=0),
                              max(self.ul, default=0),
                              floor))
 
-        self._draw_yaxis(cr, w, h, peak)
+        lm = 0 if self.mini else LM   # pas de marge Y en mini
+
+        if not self.mini:
+            self._draw_yaxis(cr, w, h, peak)
+
         if self.mode == 'bars':
-            self._draw_bars(cr, w, h, peak)
+            self._draw_bars(cr, w, h, peak, lm)
         else:
-            self._draw_lines(cr, w, h, peak)
-        self._draw_legend(cr, h)
+            self._draw_lines(cr, w, h, peak, lm)
+
+        if not self.mini:
+            self._draw_legend(cr, h)
 
     # ── Lines view ────────────────────────────────────────────────────────────
 
-    def _draw_lines(self, cr, w: int, h: int, peak: float):
+    def _draw_lines(self, cr, w: int, h: int, peak: float, lm: int = LM):
         n = len(self.dl)
         if n < 2:
             return
-        gw = w - LM
+        gw = w - lm
         top, bot = 10, 6
 
         def _curve(data, colour):
             pts = [
-                (LM + i * gw / (n - 1),
+                (lm + i * gw / (n - 1),
                  h - bot - (v / peak) * (h - top - bot))
                 for i, v in enumerate(data)
             ]
@@ -232,15 +252,15 @@ class NetGraph(Gtk.DrawingArea):
 
     # ── Bars view ─────────────────────────────────────────────────────────────
 
-    def _draw_bars(self, cr, w: int, h: int, peak: float):
+    def _draw_bars(self, cr, w: int, h: int, peak: float, lm: int = LM):
         n   = len(self.dl)
-        gw  = w - LM
+        gw  = w - lm
         bot = 6
         bpw = max(3.0, gw / n)
         sw  = max(1.0, (bpw - 2) / 2)
 
         for i, (dl, ul) in enumerate(zip(self.dl, self.ul)):
-            x = LM + i * bpw
+            x = lm + i * bpw
             bh = (dl / peak) * (h - bot - 4)
             if bh > 0.5:
                 self._bar(cr, x, h - bot - bh, sw, bh, *C_DL)
@@ -252,7 +272,8 @@ class NetGraph(Gtk.DrawingArea):
     def _bar(cr, x, y, w, h, r, g, b):
         rad = min(2.5, w / 2, h / 2)
         cr.set_source_rgba(r, g, b, 0.82)
-        if rad > 0 and h > rad * 2:
+        # Coins arrondis seulement si la barre est assez large (sinon path dégénéré)
+        if rad >= 1.0 and w > rad * 2 and h > rad * 2:
             cr.move_to(x + rad, y)
             cr.arc(x + w - rad, y + rad,     rad, -math.pi / 2, 0)
             cr.arc(x + w - rad, y + h - rad, rad, 0,            math.pi / 2)
@@ -262,10 +283,12 @@ class NetGraph(Gtk.DrawingArea):
         else:
             cr.rectangle(x, y, w, h)
         cr.fill()
-        ht = min(4.0, h * 0.25)
-        cr.set_source_rgba(min(1, r + 0.25), min(1, g + 0.15), min(1, b + 0.1), 0.40)
-        cr.rectangle(x + 1, y + 1, max(0, w - 2), ht)
-        cr.fill()
+        # Highlight seulement si la barre est assez large
+        if w > 2:
+            ht = min(4.0, h * 0.25)
+            cr.set_source_rgba(min(1, r + 0.25), min(1, g + 0.15), min(1, b + 0.1), 0.40)
+            cr.rectangle(x + 1, y + 1, max(0, w - 2), ht)
+            cr.fill()
 
     # ── Y axis + graduation ───────────────────────────────────────────────────
 
@@ -338,6 +361,9 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         self._prev_t:     float | None = None
         self._session_dl  = 0.0
         self._session_ul  = 0.0
+        self._mini        = False
+        self._mini_graph  = False   # sous-mode mini : False=texte, True=graphe
+        self._drag_ctrl:  Gtk.GestureClick | None = None
         self._ifaces: list[str] = sorted(psutil.net_if_stats().keys())
 
         self._build_ui()
@@ -354,53 +380,53 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         self.set_child(root)
 
         # Header
-        hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        hdr.set_css_classes(['nm-header'])
+        self._hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self._hdr.set_css_classes(['nm-header'])
 
         self._title = Gtk.Label()
         self._title.set_css_classes(['nm-title'])
         self._title.set_hexpand(True)
         self._title.set_xalign(0.0)
-        hdr.append(self._title)
+        self._hdr.append(self._title)
 
         self._btn_mode = Gtk.Button()
         self._btn_mode.set_css_classes(['nm-btn'])
         self._btn_mode.connect('clicked', self._toggle_mode)
-        hdr.append(self._btn_mode)
+        self._hdr.append(self._btn_mode)
 
-        root.append(hdr)
+        root.append(self._hdr)
 
         # Graph
         self._graph = NetGraph()
         root.append(self._graph)
 
         # Speed row
-        speeds = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        speeds.set_css_classes(['nm-speeds'])
-        speeds.set_homogeneous(True)
+        self._speeds_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self._speeds_box.set_css_classes(['nm-speeds'])
+        self._speeds_box.set_homogeneous(True)
 
         self._dl_lbl = Gtk.Label()
         self._dl_lbl.set_css_classes(['nm-dl'])
         self._ul_lbl = Gtk.Label()
         self._ul_lbl.set_css_classes(['nm-ul'])
 
-        speeds.append(self._dl_lbl)
-        speeds.append(self._ul_lbl)
-        root.append(speeds)
+        self._speeds_box.append(self._dl_lbl)
+        self._speeds_box.append(self._ul_lbl)
+        root.append(self._speeds_box)
 
         # Totals row
-        totals = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        totals.set_css_classes(['nm-totals'])
-        totals.set_homogeneous(True)
+        self._totals_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self._totals_box.set_css_classes(['nm-totals'])
+        self._totals_box.set_homogeneous(True)
 
         self._tot_dl = Gtk.Label()
         self._tot_dl.set_css_classes(['nm-tot'])
         self._tot_ul = Gtk.Label()
         self._tot_ul.set_css_classes(['nm-tot'])
 
-        totals.append(self._tot_dl)
-        totals.append(self._tot_ul)
-        root.append(totals)
+        self._totals_box.append(self._tot_dl)
+        self._totals_box.append(self._tot_ul)
+        root.append(self._totals_box)
 
         # Right-click
         rclick = Gtk.GestureClick()
@@ -517,6 +543,16 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         unit_act.connect('activate', _set_unit)
         app.add_action(unit_act)
 
+        # Mini mode
+        mini_act = Gio.SimpleAction.new('minimode', None)
+        mini_act.connect('activate', lambda *_: self._toggle_mini())
+        app.add_action(mini_act)
+
+        # Mini view toggle (texte ↔ graphe)
+        miniview_act = Gio.SimpleAction.new('miniview', None)
+        miniview_act.connect('activate', lambda *_: self._toggle_mini_view())
+        app.add_action(miniview_act)
+
         # Reset
         reset_act = Gio.SimpleAction.new('reset', None)
         reset_act.connect('activate', lambda *_: self._reset_session())
@@ -586,6 +622,84 @@ class NetMeterWindow(Gtk.ApplicationWindow):
             pass
         return False
 
+    def _toggle_mini(self):
+        self._mini = not self._mini
+        if self._mini:
+            self.set_decorated(False)
+            self._add_drag()
+            self._apply_mini_view()
+        else:
+            self._hdr.set_visible(True)
+            self._speeds_box.set_visible(True)
+            self._totals_box.set_visible(True)
+            self._btn_mode.set_visible(True)
+            self._graph.set_visible(True)
+            self._graph.mini = False
+            self._graph.set_size_request(-1, 110)
+            self._graph.queue_draw()
+            self.set_resizable(True)
+            self.set_size_request(-1, -1)
+            self.set_default_size(WIN_W, WIN_H)
+            self._remove_drag()
+            self.set_decorated(True)
+            GLib.timeout_add(150, self._set_above)
+
+    def _apply_mini_view(self):
+        """Applique le sous-mode mini courant (texte ou graphe)."""
+        # Widgets toujours cachés en mini
+        self._hdr.set_visible(False)
+        self._totals_box.set_visible(False)
+        self._btn_mode.set_visible(False)
+
+        if self._mini_graph:
+            # Mini graphe — pleine largeur, sans axe Y
+            self._speeds_box.set_visible(False)
+            self._graph.mini = True
+            self._graph.set_visible(True)
+            self._graph.set_size_request(MINI_W, MINI_H_GRAPH)
+            self._graph.queue_draw()
+            self.set_resizable(False)
+            self.set_size_request(MINI_W, MINI_H_GRAPH)
+            self.set_default_size(MINI_W, MINI_H_GRAPH)
+        else:
+            # Mini texte — juste les vitesses
+            self._graph.set_visible(False)
+            self._graph.mini = False
+            self._speeds_box.set_visible(True)
+            self.set_resizable(False)
+            self.set_size_request(MINI_W, -1)
+            self.set_default_size(MINI_W, -1)
+
+    def _toggle_mini_view(self):
+        """Bascule entre mini texte et mini graphe."""
+        self._mini_graph = not self._mini_graph
+        self._apply_mini_view()
+
+    def _add_drag(self):
+        """Ajoute un contrôleur de drag sur toute la fenêtre (mode mini sans déco)."""
+        self._drag_ctrl = Gtk.GestureClick()
+        self._drag_ctrl.set_button(1)
+        self._drag_ctrl.connect('pressed', self._on_mini_drag)
+        self.add_controller(self._drag_ctrl)
+
+    def _remove_drag(self):
+        if self._drag_ctrl:
+            self.remove_controller(self._drag_ctrl)
+            self._drag_ctrl = None
+
+    def _on_mini_drag(self, gesture, _n, x, y):
+        try:
+            surface = self.get_surface()
+            if hasattr(surface, 'begin_move'):
+                surface.begin_move(
+                    gesture.get_device(),
+                    gesture.get_current_button(),
+                    x, y,
+                    gesture.get_current_event_time()
+                )
+        except Exception:
+            pass
+
     def _toggle_mode(self, _btn=None):
         mode = self._graph.cycle_mode()
         # bouton affiche la vue VERS LAQUELLE on basculera au prochain clic
@@ -630,6 +744,10 @@ class NetMeterWindow(Gtk.ApplicationWindow):
         menu.append_submenu(_('language'), langs)
 
         menu.append(_('reset'), "app.reset")
+        menu.append(_('mini_off') if self._mini else _('mini_on'), "app.minimode")
+        if self._mini:
+            label = _('mini_text') if self._mini_graph else _('mini_graph')
+            menu.append(label, "app.miniview")
         menu.append(_('quit'),  "app.quit")
         return menu
 
