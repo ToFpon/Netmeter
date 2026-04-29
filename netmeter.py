@@ -23,7 +23,7 @@ HISTORY      = 120
 TICK_MS      = 1000
 WIN_W, WIN_H     = 690, 345
 MINI_W           = 260
-MINI_H_GRAPH     = 72    # mini graphe
+MINI_H_GRAPH     = 40   # mini graphe
 LM           = 110        # left margin for Y labels (px)
 
 C_DL    = (0.25, 0.73, 0.31)
