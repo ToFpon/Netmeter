@@ -108,7 +108,7 @@ HISTORY      = 120     # Graph history duration (seconds)
 TICK_MS      = 1000    # Refresh interval (ms)
 WIN_W, WIN_H = 690, 345  # Default window size (px)
 MINI_W       = 260     # Mini mode width (px)
-MINI_H_GRAPH = 72      # Mini graph height (px)
+MINI_H_GRAPH = 50      # Mini graph height (px)
 LM           = 110     # Left margin for Y labels (px)
 ```
 

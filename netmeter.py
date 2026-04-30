@@ -23,7 +23,7 @@ HISTORY      = 120
 TICK_MS      = 1000
 WIN_W, WIN_H     = 690, 345
 MINI_W           = 260
-MINI_H_GRAPH     = 40   # mini graphe
+MINI_H_GRAPH     = 50  # mini graphe
 LM           = 110        # left margin for Y labels (px)
 
 C_DL    = (0.25, 0.73, 0.31)
@@ -573,8 +573,10 @@ class NetMeterWindow(Gtk.ApplicationWindow):
 
     def _read_bytes(self) -> tuple[float, float]:
         counters = psutil.net_io_counters(pernic=True)
-        if self._iface and self._iface in counters:
-            c = counters[self._iface]
+        if self._iface:
+            c = counters.get(self._iface)
+            if c is None:
+                return 0.0, 0.0
             return float(c.bytes_recv), float(c.bytes_sent)
         recv = sum(c.bytes_recv for c in counters.values())
         sent = sum(c.bytes_sent for c in counters.values())
@@ -725,6 +727,7 @@ class NetMeterWindow(Gtk.ApplicationWindow):
 
     def _build_menu(self) -> Gio.Menu:
         menu = Gio.Menu()
+        self._ifaces = sorted(psutil.net_if_stats().keys())
 
         ifaces = Gio.Menu()
         ifaces.append(_('all_ifaces'), "app.iface::All")
